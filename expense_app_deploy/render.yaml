@@ -2,7 +2,7 @@
   - type: web
     name: voice-expense-app
     runtime: python
-    rootDir: voice_expense_app
+
     buildCommand: "python -m py_compile server.py"
     startCommand: "python server.py"
     envVars:
