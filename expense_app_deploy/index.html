@@ -1,0 +1,162 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>語音記帳</title>
+  <style>
+    :root { --bg:#f6f2ea; --card:#fffaf2; --ink:#212121; --muted:#6f6a63; --accent:#d06f3b; --accent-dark:#a65128; --line:#e5d8c8; --ok:#2d7d46; --warn:#9f5f18; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:"Segoe UI","Noto Sans TC",sans-serif; background:radial-gradient(circle at top,#fffaf1 0%,#f6f2ea 45%,#ece2d4 100%); color:var(--ink); min-height:100vh; }
+    .shell { max-width:560px; margin:0 auto; padding:20px 16px 32px; }
+    .hero { padding:12px 4px 18px; }
+    .eyebrow { margin:0 0 8px; color:var(--accent-dark); font-size:14px; font-weight:700; }
+    h1 { margin:0; font-size:34px; line-height:1.15; }
+    .sub { margin:10px 0 0; color:var(--muted); line-height:1.6; font-size:15px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:24px; padding:18px; box-shadow:0 16px 40px rgba(98,73,49,.08); }
+    .stack { display:grid; gap:14px; }
+    label { display:block; font-size:14px; color:var(--muted); margin-bottom:8px; font-weight:600; }
+    textarea,input,select { width:100%; border:1px solid var(--line); border-radius:16px; padding:14px 15px; font-size:16px; background:white; color:var(--ink); }
+    textarea { min-height:132px; resize:vertical; line-height:1.5; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .record,.submit { width:100%; border:none; border-radius:18px; padding:16px 18px; color:white; font-size:18px; font-weight:700; cursor:pointer; }
+    .record { background:linear-gradient(135deg,var(--accent) 0%,#eb9565 100%); }
+    .record.is-recording { background:linear-gradient(135deg,#bf3c31 0%,#e17053 100%); }
+    .submit { background:var(--ink); }
+    .hint,.status,.recent { color:var(--muted); font-size:14px; line-height:1.5; }
+    .status { min-height:21px; font-weight:600; }
+    .status.ok { color:var(--ok); }
+    .status.warn { color:var(--warn); }
+    .recent-list { display:grid; gap:10px; margin-top:10px; }
+    .recent-item { padding:12px 14px; border-radius:16px; background:rgba(255,255,255,.85); border:1px solid var(--line); display:grid; gap:4px; }
+    .recent-top { display:flex; justify-content:space-between; gap:10px; font-weight:700; }
+    .pill { display:inline-block; border-radius:999px; padding:4px 10px; background:#efe0d2; color:#7f4f30; font-size:12px; font-weight:700; }
+    @media (max-width:480px) { h1 { font-size:30px; } .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">手機快速記帳</p>
+      <h1>買完就記</h1>
+      <p class="sub">按錄音，講一句，修一下，送出。這個版本先追求快，不追求複雜。</p>
+    </section>
+    <section class="card stack">
+      <button id="recordButton" class="record" type="button">開始錄音</button>
+      <p class="hint">範例：今天午餐 120，咖啡 65。語音轉文字後，你可以自己修改。</p>
+      <div>
+        <label for="transcript">語音轉文字</label>
+        <textarea id="transcript" placeholder="你講的內容會出現在這裡"></textarea>
+      </div>
+      <div class="grid">
+        <div>
+          <label for="expenseDate">日期</label>
+          <input id="expenseDate" type="date">
+        </div>
+        <div>
+          <label for="category">分類</label>
+          <select id="category">
+            <option value="">自動判斷或手動選</option>
+            <option>飲食 / 日常採買</option>
+            <option>交通</option>
+            <option>寵物</option>
+            <option>電信網路</option>
+            <option>保險 / 社會保險</option>
+            <option>分期</option>
+            <option>其他</option>
+          </select>
+        </div>
+      </div>
+      <button id="submitButton" class="submit" type="button">送進 Notion</button>
+      <div id="status" class="status"></div>
+    </section>
+    <section class="card" style="margin-top:16px;">
+      <div class="recent">剛剛送出的內容</div>
+      <div id="recentList" class="recent-list"></div>
+    </section>
+  </main>
+  <script>
+    const transcriptEl = document.getElementById("transcript");
+    const dateEl = document.getElementById("expenseDate");
+    const categoryEl = document.getElementById("category");
+    const recordButton = document.getElementById("recordButton");
+    const submitButton = document.getElementById("submitButton");
+    const statusEl = document.getElementById("status");
+    const recentListEl = document.getElementById("recentList");
+    dateEl.value = new Date().toISOString().slice(0, 10);
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition = null;
+    let isRecording = false;
+    function setStatus(message, type = "") {
+      statusEl.textContent = message;
+      statusEl.className = `status ${type}`.trim();
+    }
+    function renderRecent(item) {
+      const row = document.createElement("div");
+      row.className = "recent-item";
+      row.innerHTML = `<div class="recent-top"><span>${item.name || "未命名"}</span><span>$${item.amount || "?"}</span></div><div>${item.date || ""}</div><div><span class="pill">${item.category || "未分類"}</span></div>`;
+      recentListEl.prepend(row);
+    }
+    function setupSpeech() {
+      if (!SpeechRecognition) {
+        recordButton.disabled = true;
+        setStatus("這台裝置目前不支援瀏覽器語音辨識。", "warn");
+        return;
+      }
+      recognition = new SpeechRecognition();
+      recognition.lang = "zh-TW";
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.onstart = () => {
+        isRecording = true;
+        recordButton.textContent = "錄音中...";
+        recordButton.classList.add("is-recording");
+        setStatus("正在聽你說話...", "ok");
+      };
+      recognition.onresult = (event) => {
+        let finalText = "";
+        for (const result of event.results) finalText += result[0].transcript;
+        transcriptEl.value = finalText.trim();
+      };
+      recognition.onerror = () => setStatus("錄音失敗，請再試一次。", "warn");
+      recognition.onend = () => {
+        isRecording = false;
+        recordButton.textContent = "開始錄音";
+        recordButton.classList.remove("is-recording");
+        if (transcriptEl.value.trim()) setStatus("語音已轉成文字，你可以先改一下再送出。", "ok");
+      };
+    }
+    recordButton.addEventListener("click", () => {
+      if (!recognition) return;
+      if (isRecording) recognition.stop();
+      else recognition.start();
+    });
+    submitButton.addEventListener("click", async () => {
+      const transcript = transcriptEl.value.trim();
+      if (!transcript) {
+        setStatus("請先講話或輸入內容。", "warn");
+        return;
+      }
+      submitButton.disabled = true;
+      setStatus("送出中...", "ok");
+      try {
+        const response = await fetch("/api/expense", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript, date: dateEl.value, category: categoryEl.value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "送出失敗");
+        setStatus("已送出到記帳流程。", "ok");
+        renderRecent(data.expense);
+        transcriptEl.value = "";
+      } catch (error) {
+        setStatus(error.message || "送出失敗。", "warn");
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+    setupSpeech();
+  </script>
+</body>
+</html>
