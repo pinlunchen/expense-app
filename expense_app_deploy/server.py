@@ -46,20 +46,84 @@ def normalize_category(category: str) -> str:
     return category.replace(" / ", "／")
 
 
-def guess_category(text: str) -> str:
-    rules = {
-        "飲食／日常採買": ["午餐", "晚餐", "早餐", "咖啡", "飲料", "便當", "麵", "飯", "超商", "午茶"],
-        "交通": ["捷運", "公車", "計程車", "taxi", "uber", "高鐵", "火車"],
-        "寵物": ["貓", "狗", "飼料", "罐頭", "寵物"],
-        "電信網路": ["電信", "網路", "中華電信", "台哥大"],
-        "保險／社會保險": ["保險", "健保", "勞保"],
-        "分期": ["分期", "卡費"],
+def normalize_text(text: str) -> str:
+    t = text.lower().strip()
+    mapping = {
+        "橄欖油": ["橄欖油", "橄榄油", "olive oil"],
+        "wifi": ["wifi", "wi-fi", "wi fi"],
+        "電信": ["中華電信", "遠傳", "台哥大"],
+        "買菜": ["買菜", "菜", "蔬菜", "水果", "市場", "超市"],
+        "加油": ["加油", "加汽油", "加柴油"],
     }
-    lowered = text.lower()
-    for category, keywords in rules.items():
-        if any(keyword.lower() in lowered for keyword in keywords):
-            return category
-    return "其他"
+    for standard, variants in mapping.items():
+        for v in variants:
+            if v in t:
+                t = t.replace(v, standard)
+    return t
+
+
+def guess_category(text: str) -> str:
+    text = normalize_text(text)
+
+    if any(k in text for k in ["管理費", "社區費", "大樓管理費"]):
+        return "管理費"
+
+    if any(k in text for k in ["保險", "勞保", "健保", "勞健保"]):
+        return "保險"
+
+    if any(k in text for k in ["稅", "所得稅", "地價稅", "房屋稅", "牌照稅"]):
+        return "稅金"
+
+    if any(k in text for k in ["分期"]):
+        return "分期"
+
+    if any(k in text for k in ["紅包", "禮金", "人情"]):
+        return "人情"
+
+    if any(k in text for k in ["水電瓦斯", "水電", "水費", "電費", "瓦斯", "瓦斯費"]):
+        return "水電瓦斯"
+
+    if any(k in text for k in [
+        "wifi", "wi-fi", "網路", "上網",
+        "中華電信", "遠傳", "台哥大",
+        "手機", "電信", "手機費",
+    ]):
+        return "電信網路"
+
+    if any(k in text for k in [
+        "早餐", "午餐", "晚餐", "點心", "飲料", "咖啡", "吃", "餐",
+        "買菜", "橄欖油", "超市", "賣場", "全聯", "好市多", "家樂福", "食材", "雜貨",
+    ]):
+        return "飲食/食品雜貨"
+
+    if any(k in text for k in ["加油", "捷運", "公車", "計程車", "交通", "停車", "uber", "計程"]):
+        return "交通"
+
+    if any(k in text for k in ["洗頭", "剪髮", "染髮", "燙髮", "美容", "保養", "護膚", "美甲", "睫毛"]):
+        return "美容/保養"
+
+    if any(k in text for k in ["貓", "狗", "飼料", "罐頭", "寵物", "獸醫", "貓砂"]):
+        return "寵物"
+
+    if any(k in text for k in ["chatgpt", "claude", "訂閱", "會員", "netflix", "spotify"]):
+        return "訂閱費"
+
+    if any(k in text for k in ["電影", "ktv", "旅遊", "門票", "演唱會", "展覽", "娛樂"]):
+        return "娛樂/休閒"
+
+    if any(k in text for k in ["看診", "掛號", "藥局", "藥", "醫院", "診所", "健身", "醫療"]):
+        return "醫療/健康"
+
+    if any(k in text for k in ["衣服", "褲子", "鞋子", "包包", "服飾", "外套", "內衣"]):
+        return "服飾"
+
+    if any(k in text for k in ["課程", "書", "學費", "考試", "補習", "教材", "學習"]):
+        return "教育/學習"
+
+    if any(k in text for k in ["家具", "修繕", "修理", "清潔用品", "打掃", "家居", "燈泡", "修水管"]):
+        return "家居/修繕"
+
+    return "生活用品/雜支"
 
 
 def create_notion_page(expense: dict) -> None:
